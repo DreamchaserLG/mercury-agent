@@ -12,11 +12,31 @@ let syncDatabaseClass: typeof import('better-sqlite3') | null = null;
 let availabilityChecked = false;
 let available = false;
 
+// The standalone binary runs on Bun, which can't load better-sqlite3 (#96).
+// bun:sqlite is built in; shim the two differences this file relies on.
+function loadBunSqlite(): typeof import('better-sqlite3') {
+  const { Database } = require('bun:sqlite');
+  return class extends Database {
+    constructor(path: string) {
+      super(path, { create: true, strict: true });
+    }
+    pragma(source: string) {
+      return this.query(`PRAGMA ${source}`).all();
+    }
+    prepare(sql: string) {
+      const stmt = super.prepare(sql);
+      const get = stmt.get.bind(stmt);
+      stmt.get = (...params: any[]) => get(...params) ?? undefined;
+      return stmt;
+    }
+  } as any;
+}
+
 function ensureProbed(): void {
   if (availabilityChecked) return;
   availabilityChecked = true;
   try {
-    const mod = require('better-sqlite3');
+    const mod = process.versions.bun ? loadBunSqlite() : require('better-sqlite3');
     const probeDir = join(tmpdir(), `mercury-sqlite3-probe-${process.pid}`);
     try {
       mkdirSync(probeDir, { recursive: true });

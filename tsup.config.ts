@@ -51,6 +51,7 @@ export default defineConfig({
     "yaml",
     "zod",
     "better-sqlite3",
+    "bun:sqlite",
     "@hono/node-server",
     "sql.js",
   ],

@@ -58,6 +58,16 @@ export function isBetterSqlite3Available(): boolean {
   return syncDatabaseClass !== null;
 }
 
+export function sqliteUnavailableMessage(): string {
+  if (process.versions.bun) {
+    return 'SQLite (bun:sqlite) is not available in this Mercury binary. ' +
+      'Please report it at https://github.com/cosmicstack-labs/mercury-agent/issues';
+  }
+  return 'better-sqlite3 is not available. Install build tools (make, gcc/g++, python3) ' +
+    'or upgrade to Node >= 20, then reinstall Mercury. ' +
+    'See: https://github.com/WiseLibs/better-sqlite3/blob/master/docs/compilation.md';
+}
+
 export interface MemoryRow {
   id: string;
   user_key: string;
@@ -114,11 +124,7 @@ export class SecondBrainDB {
   constructor(dbPath: string) {
     ensureProbed();
     if (!syncDatabaseClass) {
-      throw new Error(
-        'better-sqlite3 is not available — second brain memory requires it. ' +
-        'Install build tools (make, gcc/g++, python3) or upgrade to Node >= 20. ' +
-        'See: https://github.com/WiseLibs/better-sqlite3/blob/master/docs/compilation.md'
-      );
+      throw new Error(`Second brain memory requires SQLite. ${sqliteUnavailableMessage()}`);
     }
     const dir = dirname(dbPath);
     if (!existsSync(dir)) {

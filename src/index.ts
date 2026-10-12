@@ -53,7 +53,7 @@ import { ShortTermMemory, LongTermMemory, EpisodicMemory, migrateLegacyMemory } 
 import { buildConversationHistoryPayload, CloudSessionSynchronizer, SessionRepository } from './sessions/index.js';
 import { UserMemoryStore } from './memory/user-memory.js';
 import { BotManager } from './bots/bot-manager.js';
-import { isBetterSqlite3Available } from './memory/second-brain-db.js';
+import { isBetterSqlite3Available, sqliteUnavailableMessage } from './memory/second-brain-db.js';
 import { ProviderRegistry } from './providers/registry.js';
 import { Agent } from './core/agent.js';
 import { Scheduler } from './core/scheduler.js';
@@ -2457,10 +2457,7 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
       userMemory = null;
     }
   } else if (config.memory.secondBrain?.enabled !== false && !isBetterSqlite3Available()) {
-    logger.warn(
-      'Second brain dependency issue: better-sqlite3 is not available. ' +
-      'Memory/brain features require SQLite via better-sqlite3. Install build tools and reinstall dependencies.'
-    );
+    logger.warn(`Second brain dependency issue: ${sqliteUnavailableMessage()}`);
   }
 
   const channels = new ChannelRegistry(config);

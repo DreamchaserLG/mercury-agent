@@ -1,13 +1,12 @@
 import { Hono } from 'hono';
 import { loadConfig, getMemoryDir, saveConfig } from '../../utils/config.js';
-import { isBetterSqlite3Available } from '../../memory/second-brain-db.js';
+import { isBetterSqlite3Available, sqliteUnavailableMessage } from '../../memory/second-brain-db.js';
 import { UserMemoryStore } from '../../memory/user-memory.js';
 import { join } from 'node:path';
 
 let userMemory: UserMemoryStore | null = null;
 
-const SQLITE_DEPENDENCY_ERROR =
-  'Second brain dependency issue: better-sqlite3 (SQLite backend) is not available. Install dependencies and restart Mercury.';
+const SQLITE_DEPENDENCY_ERROR = `Second brain dependency issue: ${sqliteUnavailableMessage()}`;
 
 export function setUserMemory(mem: UserMemoryStore | null): void {
   userMemory = mem;

@@ -8,6 +8,7 @@ import type { ProviderRegistry } from '../providers/registry.js';
 import type { Identity } from '../soul/identity.js';
 import type { ShortTermMemory, LongTermMemory, EpisodicMemory } from '../memory/store.js';
 import type { UserMemoryStore } from '../memory/user-memory.js';
+import { sqliteUnavailableMessage } from '../memory/second-brain-db.js';
 import type { ChannelRegistry } from '../channels/registry.js';
 import type { MercuryConfig, ProviderName } from '../utils/config.js';
 import type { TokenBudget } from '../utils/tokens.js';
@@ -6390,7 +6391,7 @@ Is this productive iteration or a stuck loop?`,
         if (cfg.memory.secondBrain?.enabled === false) {
           await channel.send('Second brain is disabled in configuration.', channelId);
         } else {
-          await channel.send('Second brain dependency issue: SQLite backend (better-sqlite3) is not available.', channelId);
+          await channel.send(`Second brain dependency issue: ${sqliteUnavailableMessage()}`, channelId);
         }
         return true;
       }
@@ -7861,7 +7862,7 @@ Is this productive iteration or a stuck loop?`,
             if (cfg.memory.secondBrain?.enabled === false) {
               await channel.send('Second brain is disabled in configuration.', channelId);
             } else {
-              await channel.send('Second brain dependency issue: SQLite backend (better-sqlite3) is not available.', channelId);
+              await channel.send(`Second brain dependency issue: ${sqliteUnavailableMessage()}`, channelId);
             }
           }
           continue;

@@ -114,8 +114,14 @@ function handle(msg, notify) {
   }
 }
 
+if (process.env.FIXTURE_STDERR_SECRET) {
+  process.stderr.write(`starting with token ${process.env.FIXTURE_STDERR_SECRET}\n`);
+}
+
 const httpIndex = process.argv.indexOf('--http');
-if (httpIndex !== -1) {
+if (process.env.FIXTURE_EXIT_AT_START) {
+  process.exitCode = 3;
+} else if (httpIndex !== -1) {
   const port = Number(process.argv[httpIndex + 1] ?? 0);
   const server = createServer((req, res) => {
     if (req.method !== 'POST') {

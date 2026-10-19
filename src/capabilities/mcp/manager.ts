@@ -262,7 +262,10 @@ export class McpManager {
         },
       },
     });
-    client.onclose = () => this.scheduleReconnect(entry, 'connection closed', generation);
+    let established = false;
+    client.onclose = () => {
+      if (established) this.scheduleReconnect(entry, 'connection closed', generation);
+    };
     try {
       await withTimeout(client.connect(created.transport), this.connectTimeoutMs, 'connect');
       const { tools } = await withTimeout(client.listTools(), this.connectTimeoutMs, 'tools/list');
@@ -270,6 +273,7 @@ export class McpManager {
         await closeQuietly(client);
         return;
       }
+      established = true;
       entry.client = client;
       entry.state = 'connected';
       entry.error = undefined;

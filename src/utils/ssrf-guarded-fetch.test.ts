@@ -1,0 +1,54 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createGuardedFetch } from './ssrf.js';
+
+let server: Server;
+let base: string;
+
+beforeAll(async () => {
+  server = createServer((req, res) => {
+    if (req.url === '/redirect') {
+      res.writeHead(302, { location: '/echo' }).end();
+      return;
+    }
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', () => {
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ method: req.method, body, auth: req.headers.authorization ?? null }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+afterAll(() => {
+  server.close();
+});
+
+describe('createGuardedFetch', () => {
+  it('blocks loopback targets by default', async () => {
+    await expect(createGuardedFetch()(`${base}/echo`)).rejects.toThrow(/private\/internal address/);
+  });
+
+  it('forwards method, body and headers when private targets are allowed', async () => {
+    const res = await createGuardedFetch({ allowPrivate: true })(new URL(`${base}/echo`), {
+      method: 'POST',
+      body: '{"x":1}',
+      headers: { authorization: 'Bearer abc' },
+    });
+    expect(await res.json()).toEqual({ method: 'POST', body: '{"x":1}', auth: 'Bearer abc' });
+  });
+
+  it('returns redirects instead of following them', async () => {
+    const res = await createGuardedFetch({ allowPrivate: true })(`${base}/redirect`);
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/echo');
+  });
+
+  it('still rejects non-http schemes', async () => {
+    await expect(createGuardedFetch({ allowPrivate: true })('file:///etc/passwd')).rejects.toThrow(/Blocked scheme/);
+  });
+});

@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { createInterface } from 'node:readline';
 import process from 'node:process';
+import { setTimeout } from 'node:timers';
 
 const TINY_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -41,6 +42,11 @@ const tools = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'crash',
+    description: 'Reply, then exit the server process.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'add_tool',
     description: 'Register an extra tool and announce tools/list_changed.',
     inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
@@ -68,6 +74,9 @@ function callTool(name, args, notify) {
       return text(process.env[String(args.name)] ?? '(unset)');
     case 'fail':
       return { content: [{ type: 'text', text: 'it failed' }], isError: true };
+    case 'crash':
+      setTimeout(() => process.exit(1), 20);
+      return text('bye');
     case 'add_tool':
       tools.push({
         name: String(args.name),

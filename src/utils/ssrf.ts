@@ -99,7 +99,7 @@ function lookupHost(hostname: string): Promise<string[]> {
 type PinnedAddress = { address: string; family: number };
 type ResolvedTarget = { url: URL; pinned?: PinnedAddress };
 
-async function resolveAndValidate(rawUrl: string): Promise<ResolvedTarget> {
+async function resolveAndValidate(rawUrl: string, allowPrivate = false): Promise<ResolvedTarget> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -108,6 +108,9 @@ async function resolveAndValidate(rawUrl: string): Promise<ResolvedTarget> {
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error(`Blocked scheme: ${parsed.protocol} — only http and https are allowed`);
+  }
+  if (allowPrivate) {
+    return { url: parsed };
   }
   if (urlHostIsPrivate(parsed.hostname)) {
     throw privateBlockReason(parsed.hostname);
@@ -194,4 +197,22 @@ export async function guardedFetch(rawUrl: string, signal: AbortSignal, headers?
     }
   }
   throw new Error('Blocked: too many redirects');
+}
+
+export type GuardedFetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+export function createGuardedFetch(options: { allowPrivate?: boolean } = {}): GuardedFetchLike {
+  return async (input, init = {}) => {
+    const { url, pinned } = await resolveAndValidate(typeof input === 'string' ? input : input.href, options.allowPrivate === true);
+    const host = url.hostname;
+    if (pinned) pinnedByHost.set(host, pinned);
+    try {
+      const guardedInit: FetchInitWithDispatcher = { ...init, redirect: 'manual', dispatcher: guardedAgent };
+      return await fetch(url, guardedInit);
+    } finally {
+      if (pinned && pinnedByHost.get(host)?.address === pinned.address) {
+        pinnedByHost.delete(host);
+      }
+    }
+  };
 }

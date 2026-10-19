@@ -89,6 +89,7 @@ import { clearCloudRuntimeOnline, markCloudRuntimeOnline } from './cloud/runtime
 import { startWebServer, stopWebServer, updateStatus as updateWebStatus, setUserMemory as setWebUserMemory, setWebChannel as setWebWebChannel, setScheduler as setWebScheduler, setAgentSupervisor as setWebSupervisor, setBackgroundTaskManager as setWebBgTasks, setSpotifyClient as setWebSpotify, setProgrammingMode as setWebProgrammingMode, setModelSwitchCallback as setWebModelSwitch, setCurrentProviderCallback as setWebCurrentProvider, setKanbanSupervisor as setWebKanban, setKanbanBoardManager as setWebBoardManager, setKanbanProviders as setWebKanbanProviders, setIDEProviders as setWebIDEProviders, setSessionRepository as setWebSessions, setSessionSyncEnabledCallback as setWebSessionSyncEnabled, setBotManager as setWebBotManager, setBotsWebhookSecret, setShutdownHandler } from './web/server.js';
 import { isWebAuthInitialized, setWebPassword, writeAttachToken } from './web/auth.js';
 import { startLoopLagMonitor } from './utils/loop-lag.js';
+import { McpManager, validateMcpConfig } from './capabilities/mcp/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let pkgVersion: string;
@@ -2580,6 +2581,7 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
     memoryGetSubconscious: (limit?: number) => userMemory ? userMemory.getSubconscious(limit) : [],
     memoryIsShareLearning: () => userMemory ? userMemory.isShareLearning() : false,
     memorySetShareLearning: (enabled: boolean) => { if (userMemory) userMemory.setShareLearning(enabled); },
+    mcpStatus: () => capabilities.getMcpManager()?.status() ?? [],
   });
 
   capabilities.setSendFileHandler(async (filePath: string, channel?: string) => {
@@ -2641,6 +2643,15 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
   }
 
   capabilities.registerAll();
+
+  const mcpConfig = validateMcpConfig(config.mcp);
+  for (const problem of mcpConfig.problems) logger.warn({ problem }, 'MCP server skipped');
+  for (const warning of mcpConfig.warnings) logger.warn({ warning }, 'MCP config warning');
+  const mcpManager = new McpManager(mcpConfig.servers, {
+    gate: (request) => capabilities.permissions.checkMcpTool(request),
+  });
+  capabilities.attachMcp(mcpManager);
+  void mcpManager.connectAll();
 
   const agent = new Agent(
     config, providers, identity, shortTerm, longTerm, episodic, userMemory, channels, tokenBudget, capabilities, scheduler, sessions,
@@ -3744,6 +3755,7 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
       // Release the bots' SQLite queue handle — on Windows an open handle
       // keeps queue.db locked against any later uninstall/replace.
       try { botManager?.dispose(); } catch { /* best effort */ }
+      await mcpManager.close();
       await agent.shutdown();
       clearCloudRuntimeOnline();
       releaseRuntimeProcess(runtimeMode);

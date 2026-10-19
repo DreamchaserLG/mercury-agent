@@ -30,7 +30,15 @@ afterAll(() => {
 
 describe('createGuardedFetch', () => {
   it('blocks loopback targets by default', async () => {
-    await expect(createGuardedFetch()(`${base}/echo`)).rejects.toThrow(/private\/internal address/);
+    await expect(createGuardedFetch()(`${base}/echo`)).rejects.toThrow(
+      /private\/internal address \(SSRF protection\)\. Set MERCURY_ALLOW_PRIVATE_FETCH=1/,
+    );
+  });
+
+  it('uses the caller hint when a target is blocked', async () => {
+    await expect(createGuardedFetch({ privateHint: 'Use the server setting.' })(`${base}/echo`)).rejects.toThrow(
+      'Blocked: 127.0.0.1 is a private/internal address (SSRF protection). Use the server setting.',
+    );
   });
 
   it('forwards method, body and headers when private targets are allowed', async () => {

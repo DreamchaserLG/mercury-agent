@@ -77,11 +77,10 @@ function urlHostIsPrivate(hostname: string): boolean {
   return false;
 }
 
-function privateBlockReason(host: string): Error {
-  return new Error(
-    `Blocked: ${host} is a private/internal address (SSRF protection). ` +
-      'Set MERCURY_ALLOW_PRIVATE_FETCH=1 to allow fetching internal hosts.',
-  );
+const DEFAULT_PRIVATE_HINT = 'Set MERCURY_ALLOW_PRIVATE_FETCH=1 to allow fetching internal hosts.';
+
+function privateBlockReason(host: string, hint = DEFAULT_PRIVATE_HINT): Error {
+  return new Error(`Blocked: ${host} is a private/internal address (SSRF protection). ${hint}`);
 }
 
 function lookupHost(hostname: string): Promise<string[]> {
@@ -99,7 +98,7 @@ function lookupHost(hostname: string): Promise<string[]> {
 type PinnedAddress = { address: string; family: number };
 type ResolvedTarget = { url: URL; pinned?: PinnedAddress };
 
-async function resolveAndValidate(rawUrl: string, allowPrivate = false): Promise<ResolvedTarget> {
+async function resolveAndValidate(rawUrl: string, allowPrivate = false, privateHint?: string): Promise<ResolvedTarget> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -113,7 +112,7 @@ async function resolveAndValidate(rawUrl: string, allowPrivate = false): Promise
     return { url: parsed };
   }
   if (urlHostIsPrivate(parsed.hostname)) {
-    throw privateBlockReason(parsed.hostname);
+    throw privateBlockReason(parsed.hostname, privateHint);
   }
   if (ALLOW_PRIVATE_FETCH) {
     return { url: parsed };
@@ -132,7 +131,7 @@ async function resolveAndValidate(rawUrl: string, allowPrivate = false): Promise
   // connection would have picked.
   const offending = addresses.find((ip) => isPrivateAddress(ip));
   if (offending) {
-    throw privateBlockReason(parsed.hostname);
+    throw privateBlockReason(parsed.hostname, privateHint);
   }
   const chosen = addresses[0]!;
   return { url: parsed, pinned: { address: chosen, family: isIP(chosen) } };
@@ -201,9 +200,10 @@ export async function guardedFetch(rawUrl: string, signal: AbortSignal, headers?
 
 export type GuardedFetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
-export function createGuardedFetch(options: { allowPrivate?: boolean } = {}): GuardedFetchLike {
+export function createGuardedFetch(options: { allowPrivate?: boolean; privateHint?: string } = {}): GuardedFetchLike {
   return async (input, init = {}) => {
-    const { url, pinned } = await resolveAndValidate(typeof input === 'string' ? input : input.href, options.allowPrivate === true);
+    const href = typeof input === 'string' ? input : input.href;
+    const { url, pinned } = await resolveAndValidate(href, options.allowPrivate === true, options.privateHint);
     const host = url.hostname;
     if (pinned) pinnedByHost.set(host, pinned);
     try {

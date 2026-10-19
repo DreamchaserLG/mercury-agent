@@ -174,7 +174,7 @@ describe('MCP end to end over Streamable HTTP', () => {
     const url = await startHttpFixture({});
     const blocked = await harness({ web: { transport: 'http', url, tools: { allow: ['*'] } } }, { backoff: { maxAttempts: 0 } });
     expect(blocked.manager.status()[0]).toMatchObject({ state: 'failed' });
-    expect(blocked.manager.status()[0]?.error).toMatch(/private\/internal address/);
+    expect(blocked.manager.status()[0]?.error).toMatch(/private\/internal address \(SSRF protection\)\. Set allowPrivate: true/);
     expect(Object.keys(blocked.registry.getTools()).some((name) => name.startsWith('mcp__'))).toBe(false);
 
     const allowed = await harness(
@@ -248,6 +248,7 @@ describe('MCP secrets never leak', () => {
 
     const states = Object.fromEntries(manager.status().map((s) => [s.id, s.state]));
     expect(states).toEqual({ echoer: 'connected', leaky: 'failed', web: 'connected', wrongweb: 'failed' });
+    expect(manager.status().find((s) => s.id === 'wrongweb')?.error).toMatch(/^HTTP 401 Unauthorized/);
 
     const result = String(await run('mcp__echoer__read_env', { name: 'TOKEN' }));
     expect(result).toBe('****');

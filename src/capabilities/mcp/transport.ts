@@ -39,7 +39,10 @@ function createStdioTransport(server: McpServerConfig, resolved: ResolvedSecrets
 
 function createHttpTransport(server: McpServerConfig, resolved: ResolvedSecrets): CreatedTransport {
   const transport = new StreamableHTTPClientTransport(new URL(server.url ?? ''), {
-    fetch: createGuardedFetch({ allowPrivate: server.allowPrivate === true }),
+    fetch: createGuardedFetch({
+      allowPrivate: server.allowPrivate === true,
+      privateHint: 'Set allowPrivate: true for this MCP server (or add it with --allow-private) if you trust it.',
+    }),
     requestInit: { headers: resolved.headers },
     redirectPolicy: 'same-origin',
   });

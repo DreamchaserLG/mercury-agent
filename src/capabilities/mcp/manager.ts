@@ -58,6 +58,12 @@ function clientInfo(): { name: string; version: string } {
 }
 
 function errorMessage(err: unknown): string {
+  const data = (err as { data?: { status?: unknown; statusText?: unknown; text?: unknown } } | null)?.data;
+  if (data && typeof data.status === 'number') {
+    const statusText = typeof data.statusText === 'string' && data.statusText ? ` ${data.statusText}` : '';
+    const body = typeof data.text === 'string' && data.text.trim() ? `: ${data.text.trim().slice(0, 200)}` : '';
+    return redactSecrets(`HTTP ${data.status}${statusText}${body}`);
+  }
   return redactSecrets(err instanceof Error ? err.message : String(err));
 }
 

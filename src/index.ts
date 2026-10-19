@@ -86,7 +86,7 @@ import { selectWithArrowKeys } from './utils/arrow-select.js';
 import { ProviderModelFetchError, fetchProviderModelCatalog } from './utils/provider-models.js';
 import { initCloudTokenStore } from './cloud/token-store.js';
 import { clearCloudRuntimeOnline, markCloudRuntimeOnline } from './cloud/runtime-status.js';
-import { startWebServer, stopWebServer, updateStatus as updateWebStatus, setUserMemory as setWebUserMemory, setWebChannel as setWebWebChannel, setScheduler as setWebScheduler, setAgentSupervisor as setWebSupervisor, setBackgroundTaskManager as setWebBgTasks, setSpotifyClient as setWebSpotify, setProgrammingMode as setWebProgrammingMode, setModelSwitchCallback as setWebModelSwitch, setCurrentProviderCallback as setWebCurrentProvider, setKanbanSupervisor as setWebKanban, setKanbanBoardManager as setWebBoardManager, setKanbanProviders as setWebKanbanProviders, setIDEProviders as setWebIDEProviders, setSessionRepository as setWebSessions, setSessionSyncEnabledCallback as setWebSessionSyncEnabled, setBotManager as setWebBotManager, setBotsWebhookSecret, setShutdownHandler } from './web/server.js';
+import { startWebServer, stopWebServer, updateStatus as updateWebStatus, setUserMemory as setWebUserMemory, setWebChannel as setWebWebChannel, setScheduler as setWebScheduler, setAgentSupervisor as setWebSupervisor, setBackgroundTaskManager as setWebBgTasks, setSpotifyClient as setWebSpotify, setProgrammingMode as setWebProgrammingMode, setModelSwitchCallback as setWebModelSwitch, setCurrentProviderCallback as setWebCurrentProvider, setKanbanSupervisor as setWebKanban, setKanbanBoardManager as setWebBoardManager, setKanbanProviders as setWebKanbanProviders, setIDEProviders as setWebIDEProviders, setSessionRepository as setWebSessions, setSessionSyncEnabledCallback as setWebSessionSyncEnabled, setBotManager as setWebBotManager, setBotsWebhookSecret, setShutdownHandler, setMcpManager as setWebMcpManager } from './web/server.js';
 import { isWebAuthInitialized, setWebPassword, writeAttachToken } from './web/auth.js';
 import { startLoopLagMonitor } from './utils/loop-lag.js';
 import { McpManager, probeMcpServer, validateMcpConfig, type McpServerStatus } from './capabilities/mcp/index.js';
@@ -103,6 +103,7 @@ import {
   removeServer as removeMcpServer,
   setServerEnabled as setMcpServerEnabled,
 } from './capabilities/mcp/admin.js';
+import { runMcpDoctor, summarizeMcpConfig } from './capabilities/mcp/doctor.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let pkgVersion: string;
@@ -2664,6 +2665,7 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
     gate: (request) => capabilities.permissions.checkMcpTool(request),
   });
   capabilities.attachMcp(mcpManager);
+  setWebMcpManager(mcpManager);
   void mcpManager.connectAll();
 
   const agent = new Agent(
@@ -4003,6 +4005,7 @@ program
   .description('Reconfigure Mercury setup (name, providers, channels, permissions defaults)')
   .option('--platform', 'Show platform compatibility diagnostics')
   .option('--storage', 'Show SQLite backend, database files and row counts')
+  .option('--mcp', 'Connect to each configured MCP server and report its status')
   .action(async (opts) => {
     {
       // Keys that cannot be right — say so before anything is tried.
@@ -4018,6 +4021,14 @@ program
       runStorageDoctor();
       return;
     }
+    if (opts.mcp) {
+      const mcpDoctor = await runMcpDoctor(loadConfig().mcp);
+      for (const line of mcpDoctor.lines) console.log(line);
+      if (!mcpDoctor.ok) process.exitCode = 1;
+      return;
+    }
+    const mcpSummary = summarizeMcpConfig(loadConfig().mcp);
+    if (mcpSummary) console.log(chalk.dim(`  ${mcpSummary}`));
     // The daemon reads providers, keys and channels at boot: a reconfigure
     // that only wrote the file looked like it did nothing until a manual
     // `mercury restart`. Restart it ourselves when something changed.

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createGuardedFetch } from './ssrf.js';
+import { createGuardedFetch, PinTable } from './ssrf.js';
 
 let server: Server;
 let base: string;
@@ -58,5 +58,28 @@ describe('createGuardedFetch', () => {
 
   it('still rejects non-http schemes', async () => {
     await expect(createGuardedFetch({ allowPrivate: true })('file:///etc/passwd')).rejects.toThrow(/Blocked scheme/);
+  });
+});
+
+describe('PinTable', () => {
+  it('keeps a host pinned until every request using it has finished', () => {
+    const pins = new PinTable();
+    pins.acquire('example.com', { address: '93.184.216.34', family: 4 });
+    pins.acquire('example.com', { address: '93.184.216.34', family: 4 });
+    pins.release('example.com');
+    expect(pins.get('example.com')).toEqual({ address: '93.184.216.34', family: 4 });
+    pins.release('example.com');
+    expect(pins.get('example.com')).toBeUndefined();
+    pins.release('example.com');
+    expect(pins.get('example.com')).toBeUndefined();
+  });
+
+  it('uses the latest validated address while requests overlap', () => {
+    const pins = new PinTable();
+    pins.acquire('example.com', { address: '93.184.216.34', family: 4 });
+    pins.acquire('example.com', { address: '93.184.216.35', family: 4 });
+    expect(pins.get('example.com')).toEqual({ address: '93.184.216.35', family: 4 });
+    pins.release('example.com');
+    expect(pins.get('example.com')).toEqual({ address: '93.184.216.35', family: 4 });
   });
 });

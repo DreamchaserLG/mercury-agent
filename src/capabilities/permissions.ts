@@ -998,7 +998,8 @@ export class PermissionManager {
   }
 
   private isProtectedConfigPath(path: string): boolean {
-    const normalize = (p: string) => (process.platform === 'win32' ? p.toLowerCase() : p);
+    const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
+    const normalize = (p: string) => (caseInsensitive ? p.toLowerCase() : p);
     const protectedPaths = new Set(
       protectedConfigPaths().flatMap((p) => [resolve(p), this.canonicalizePath(resolve(p))]).map(normalize),
     );

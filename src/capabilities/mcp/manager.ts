@@ -18,9 +18,10 @@ export interface McpBackoff {
   initialMs: number;
   maxMs: number;
   maxAttempts: number;
+  stableMs: number;
 }
 
-const DEFAULT_BACKOFF: McpBackoff = { initialMs: 1_000, maxMs: 300_000, maxAttempts: 10 };
+const DEFAULT_BACKOFF: McpBackoff = { initialMs: 1_000, maxMs: 300_000, maxAttempts: 10, stableMs: 60_000 };
 
 export interface McpManagerOptions {
   gate: McpGate;
@@ -48,6 +49,7 @@ interface ServerEntry {
   stderrTail: () => string;
   tools: ToolEntry[];
   attempts: number;
+  connectedAt?: number;
   generation: number;
   timer?: ReturnType<typeof setTimeout>;
 }
@@ -65,6 +67,30 @@ function errorMessage(err: unknown): string {
     return redactSecrets(`HTTP ${data.status}${statusText}${body}`);
   }
   return redactSecrets(err instanceof Error ? err.message : String(err));
+}
+
+const CONNECTION_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ETIMEDOUT',
+  'EPIPE',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
+]);
+
+function isConnectionError(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth++) {
+    const { code, message, cause } = current as { code?: unknown; message?: unknown; cause?: unknown };
+    if (typeof code === 'string' && CONNECTION_ERROR_CODES.has(code)) return true;
+    if (message === 'fetch failed') return true;
+    current = cause;
+  }
+  return false;
 }
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -283,7 +309,7 @@ export class McpManager {
       entry.client = client;
       entry.state = 'connected';
       entry.error = undefined;
-      entry.attempts = 0;
+      entry.connectedAt = Date.now();
       this.applyTools(entry, tools);
       logger.info({ server: entry.id, tools: entry.tools.length }, 'MCP server connected');
     } catch (err) {
@@ -299,6 +325,8 @@ export class McpManager {
     entry.client = undefined;
     if (client) void closeQuietly(client);
     entry.error = reason;
+    if (entry.connectedAt !== undefined && Date.now() - entry.connectedAt >= this.backoff.stableMs) entry.attempts = 0;
+    entry.connectedAt = undefined;
     entry.attempts++;
     if (entry.attempts > this.backoff.maxAttempts) {
       this.fail(entry, `${reason} (gave up after ${this.backoff.maxAttempts} attempts)`);
@@ -356,9 +384,15 @@ export class McpManager {
     if (!client || entry.state !== 'connected') {
       throw new Error(`server ${entry.id} is ${entry.state}`);
     }
-    return client.callTool(
-      { name: toolName, arguments: args },
-      { signal, timeout: entry.config.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS },
-    );
+    const generation = entry.generation;
+    try {
+      return await client.callTool(
+        { name: toolName, arguments: args },
+        { signal, timeout: entry.config.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS },
+      );
+    } catch (err) {
+      if (isConnectionError(err)) this.scheduleReconnect(entry, errorMessage(err), generation);
+      throw err;
+    }
   }
 }

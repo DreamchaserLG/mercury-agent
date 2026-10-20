@@ -152,6 +152,19 @@ describe('Mercury config file protection', () => {
     expect((await pm.checkFsAccess(join(home, 'notes.txt'), 'write')).allowed).toBe(true);
     expect(ask).not.toHaveBeenCalled();
   });
+
+  it('matches config files case-insensitively on macOS', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    try {
+      const { pm, ask } = writer('no');
+      const result = await pm.checkFsAccess(join(home, 'MERCURY.YAML'), 'write');
+      expect(result.allowed).toBe(false);
+      expect(ask.mock.calls[0]?.[0]).toMatch(/^Write to Mercury config file: /);
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
+  });
 });
 
 describe('MCP tools in the registry and filters', () => {

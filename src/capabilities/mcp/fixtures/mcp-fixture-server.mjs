@@ -104,6 +104,7 @@ function handle(msg, notify) {
     case 'ping':
       return ok({});
     case 'tools/list':
+      if (process.env.FIXTURE_EXIT_AFTER_LIST) setTimeout(() => process.exit(1), 20);
       return ok({ tools });
     case 'tools/call': {
       const result = callTool(msg.params?.name, msg.params?.arguments ?? {}, notify);

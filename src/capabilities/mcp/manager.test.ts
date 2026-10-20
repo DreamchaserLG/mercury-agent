@@ -139,6 +139,17 @@ describe('McpManager', () => {
     expect(await run(m.getTools().mcp__fx__add, { a: 1, b: 1 })).toBe('2');
   }, 30_000);
 
+  it('gives up on a server that dies right after every connect', async () => {
+    const m = manager(
+      { fx: fixture({ env: { FIXTURE_EXIT_AFTER_LIST: '1' }, tools: { allow: ['*'] } }) },
+      { backoff: { initialMs: 20, maxMs: 20, maxAttempts: 3 } },
+    );
+    await m.connectAll();
+    await waitFor(() => m.status()[0]?.state === 'failed', 15_000);
+    expect(m.status()[0]?.error).toMatch(/gave up after 3 attempts/);
+    expect(m.getTools()).toEqual({});
+  }, 30_000);
+
   it('picks up tools announced through tools/list_changed', async () => {
     const onToolsChanged = vi.fn();
     const m = manager({ fx: fixture({ tools: { allow: ['*'] } }) }, { onToolsChanged });

@@ -104,6 +104,13 @@ describe('editing servers', () => {
     expect(warnings[0]).toMatch(/GITHUB_TOKEN looks like a literal secret/);
   });
 
+  it('warns when adding an auto-approved tool that is not allowed', () => {
+    const warnings = admin.addServer({}, 'docs', admin.buildServerConfig({ http: 'https://x.example/mcp', autoApprove: 'search' }));
+    expect(warnings).toEqual([
+      `mcp.servers.docs.tools.autoApprove: "search" is not allowed, so the agent can't see it; add it to tools.allow`,
+    ]);
+  });
+
   it('keeps ${env:} references literal through a config save', () => {
     const config = loadConfig();
     admin.addServer(config, 'docs', {

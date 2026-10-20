@@ -7,6 +7,20 @@ import type { ResolvedSecrets } from './config.js';
 import type { McpServerConfig } from './types.js';
 
 export const STDERR_TAIL_CHARS = 8 * 1024;
+const STDERR_RAW_CHARS = 2 * STDERR_TAIL_CHARS;
+
+export function appendStderr(raw: string, chunk: string): string {
+  return (raw + chunk).slice(-STDERR_RAW_CHARS);
+}
+
+export function renderStderrTail(raw: string): string {
+  let text = raw;
+  if (raw.length >= STDERR_RAW_CHARS) {
+    const newline = text.indexOf('\n');
+    if (newline !== -1) text = text.slice(newline + 1);
+  }
+  return redactSecrets(text).slice(-STDERR_TAIL_CHARS);
+}
 
 export interface CreatedTransport {
   transport: Transport;
@@ -30,11 +44,11 @@ function createStdioTransport(server: McpServerConfig, resolved: ResolvedSecrets
     env: { ...getDefaultEnvironment(), ...resolved.env },
     stderr: 'pipe',
   });
-  let tail = '';
+  let raw = '';
   transport.stderr?.on('data', (chunk: Buffer | string) => {
-    tail = (tail + chunk.toString()).slice(-STDERR_TAIL_CHARS);
+    raw = appendStderr(raw, chunk.toString());
   });
-  return { transport, stderrTail: () => redactSecrets(tail) };
+  return { transport, stderrTail: () => renderStderrTail(raw) };
 }
 
 function createHttpTransport(server: McpServerConfig, resolved: ResolvedSecrets): CreatedTransport {

@@ -67,6 +67,17 @@ function literalSecretWarnings(id: string, field: 'env' | 'headers', values: Rec
   return warnings;
 }
 
+function hiddenAutoApproveWarnings(id: string, server: McpServerConfig): string[] {
+  const allow = server.tools?.allow ?? [];
+  const deny = server.tools?.deny ?? [];
+  const prefix = `mcp.servers.${id}.tools.autoApprove`;
+  return (server.tools?.autoApprove ?? []).flatMap((name) => {
+    if (deny.includes(name)) return [`${prefix}: "${name}" is in tools.deny, so the agent can't see it; remove it from tools.deny`];
+    if (allow.includes('*') || allow.includes(name)) return [];
+    return [`${prefix}: "${name}" is not allowed, so the agent can't see it; add it to tools.allow`];
+  });
+}
+
 export function validateMcpConfig(raw: unknown): McpConfigValidation {
   const result: McpConfigValidation = { servers: {}, problems: [], warnings: [] };
   if (raw === undefined || raw === null) return result;
@@ -95,6 +106,7 @@ export function validateMcpConfig(raw: unknown): McpConfigValidation {
     result.warnings.push(
       ...literalSecretWarnings(id, 'env', server.env),
       ...literalSecretWarnings(id, 'headers', server.headers),
+      ...hiddenAutoApproveWarnings(id, server),
     );
   }
   return result;

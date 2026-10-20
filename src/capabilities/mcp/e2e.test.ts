@@ -39,15 +39,18 @@ function fixture(extra: Partial<McpServerConfig> = {}): McpServerConfig {
   return { transport: 'stdio', command: process.execPath, args: [FIXTURE], ...extra };
 }
 
-async function startHttpFixture(env: Record<string, string>): Promise<string> {
-  const child: ChildProcess = spawn(process.execPath, [FIXTURE, '--http', '0'], {
+async function startHttpFixture(
+  env: Record<string, string>,
+  port = 0,
+): Promise<{ url: string; stop: () => Promise<void> }> {
+  const child: ChildProcess = spawn(process.execPath, [FIXTURE, '--http', String(port)], {
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'ignore'],
   });
   cleanups.push(() => {
     child.kill();
   });
-  const port = await new Promise<number>((resolve, reject) => {
+  const listening = await new Promise<number>((resolve, reject) => {
     let buffered = '';
     child.stdout!.on('data', (chunk: Buffer) => {
       buffered += chunk.toString();
@@ -56,7 +59,13 @@ async function startHttpFixture(env: Record<string, string>): Promise<string> {
     });
     child.once('exit', (code) => reject(new Error(`fixture exited with ${code}`)));
   });
-  return `http://127.0.0.1:${port}/mcp`;
+  const stop = () =>
+    new Promise<void>((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) return resolve();
+      child.once('exit', () => resolve());
+      child.kill();
+    });
+  return { url: `http://127.0.0.1:${listening}/mcp`, stop };
 }
 
 interface Harness {
@@ -171,7 +180,7 @@ describe('MCP end to end over stdio', () => {
 
 describe('MCP end to end over Streamable HTTP', () => {
   it('blocks a loopback server unless allowPrivate is set', async () => {
-    const url = await startHttpFixture({});
+    const { url } = await startHttpFixture({});
     const blocked = await harness({ web: { transport: 'http', url, tools: { allow: ['*'] } } }, { backoff: { maxAttempts: 0 } });
     expect(blocked.manager.status()[0]).toMatchObject({ state: 'failed' });
     expect(blocked.manager.status()[0]?.error).toMatch(/private\/internal address \(SSRF protection\)\. Set allowPrivate: true/);
@@ -184,6 +193,24 @@ describe('MCP end to end over Streamable HTTP', () => {
     expect(allowed.manager.status()[0]?.state).toBe('connected');
     expect(await allowed.run('mcp__web__add', { a: 20, b: 22 })).toBe('42');
   }, 30_000);
+
+  it('marks a server reconnecting when it goes down and recovers when it is back', async () => {
+    const first = await startHttpFixture({});
+    const port = Number(new URL(first.url).port);
+    const { manager, run } = await harness(
+      { web: { transport: 'http', url: first.url, allowPrivate: true, tools: { allow: ['add'], autoApprove: ['add'] } } },
+      { backoff: { initialMs: 50, maxMs: 200, maxAttempts: 100 } },
+    );
+    expect(await run('mcp__web__add', { a: 1, b: 1 })).toBe('2');
+
+    await first.stop();
+    expect(String(await run('mcp__web__add', { a: 1, b: 1 }))).toMatch(/^Error: MCP web\/add failed: /);
+    expect(manager.status()[0]?.state).toBe('reconnecting');
+
+    await startHttpFixture({}, port);
+    await waitFor(() => manager.status()[0]?.state === 'connected', 15_000);
+    expect(await run('mcp__web__add', { a: 20, b: 22 })).toBe('42');
+  }, 40_000);
 });
 
 describe('MCP failure isolation', () => {
@@ -225,7 +252,7 @@ describe('MCP secrets never leak', () => {
   });
 
   it('keeps the sentinel out of results, status, API, chat, CLI, doctor, logs and YAML', async () => {
-    const url = await startHttpFixture({ FIXTURE_REQUIRE_TOKEN: SENTINEL });
+    const { url } = await startHttpFixture({ FIXTURE_REQUIRE_TOKEN: SENTINEL });
     const servers: Record<string, McpServerConfig> = {
       echoer: fixture({ env: { TOKEN: '${env:MCP_SENTINEL}' }, tools: { allow: ['read_env'], autoApprove: ['read_env'] } }),
       leaky: fixture({ env: { FIXTURE_STDERR_SECRET: '${env:MCP_SENTINEL}', FIXTURE_EXIT_AT_START: '1' } }),

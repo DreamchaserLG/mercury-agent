@@ -82,6 +82,23 @@ describe('validateMcpConfig', () => {
   });
 });
 
+describe('autoApprove warnings', () => {
+  it('warns when an auto-approved tool is not allowed or is denied', () => {
+    const result = validateMcpConfig({
+      servers: {
+        hidden: { transport: 'stdio', command: 'x', tools: { autoApprove: ['search'] } },
+        denied: { transport: 'stdio', command: 'x', tools: { allow: ['*'], deny: ['search'], autoApprove: ['search'] } },
+        fine: { transport: 'stdio', command: 'x', tools: { allow: ['search'], autoApprove: ['search'] } },
+        wildcard: { transport: 'stdio', command: 'x', tools: { allow: ['*'], autoApprove: ['search'] } },
+      },
+    });
+    expect(result.warnings).toEqual([
+      `mcp.servers.hidden.tools.autoApprove: "search" is not allowed, so the agent can't see it; add it to tools.allow`,
+      `mcp.servers.denied.tools.autoApprove: "search" is in tools.deny, so the agent can't see it; remove it from tools.deny`,
+    ]);
+  });
+});
+
 describe('resolveSecrets', () => {
   it('expands env references in args, env and headers and registers the values', () => {
     const token = join('resolved-token-', 'value-0001');

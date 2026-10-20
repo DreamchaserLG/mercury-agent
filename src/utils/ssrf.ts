@@ -200,19 +200,53 @@ export async function guardedFetch(rawUrl: string, signal: AbortSignal, headers?
 
 export type GuardedFetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+export class PinTable {
+  private readonly pins = new Map<string, { pin: { address: string; family: number }; count: number }>();
+
+  acquire(host: string, pin: { address: string; family: number }): void {
+    const entry = this.pins.get(host);
+    this.pins.set(host, { pin, count: (entry?.count ?? 0) + 1 });
+  }
+
+  release(host: string): void {
+    const entry = this.pins.get(host);
+    if (!entry) return;
+    if (entry.count <= 1) this.pins.delete(host);
+    else entry.count -= 1;
+  }
+
+  get(host: string): { address: string; family: number } | undefined {
+    return this.pins.get(host)?.pin;
+  }
+}
+
+const guardedFetchPins = new PinTable();
+
+const guardedFetchAgent = new Agent({
+  connect: {
+    lookup: ((hostname: string, options: { all?: boolean } | undefined, callback: (...args: unknown[]) => void) => {
+      const pinned = guardedFetchPins.get(hostname);
+      if (!pinned) {
+        (lookup as unknown as (host: string, opts: unknown, cb: unknown) => void)(hostname, options, callback);
+        return;
+      }
+      if (options?.all) callback(null, [{ address: pinned.address, family: pinned.family }]);
+      else callback(null, pinned.address, pinned.family);
+    }) as never,
+  },
+});
+
 export function createGuardedFetch(options: { allowPrivate?: boolean; privateHint?: string } = {}): GuardedFetchLike {
   return async (input, init = {}) => {
     const href = typeof input === 'string' ? input : input.href;
     const { url, pinned } = await resolveAndValidate(href, options.allowPrivate === true, options.privateHint);
     const host = url.hostname;
-    if (pinned) pinnedByHost.set(host, pinned);
+    if (pinned) guardedFetchPins.acquire(host, pinned);
     try {
-      const guardedInit: FetchInitWithDispatcher = { ...init, redirect: 'manual', dispatcher: guardedAgent };
+      const guardedInit: FetchInitWithDispatcher = { ...init, redirect: 'manual', dispatcher: guardedFetchAgent };
       return await fetch(url, guardedInit);
     } finally {
-      if (pinned && pinnedByHost.get(host)?.address === pinned.address) {
-        pinnedByHost.delete(host);
-      }
+      if (pinned) guardedFetchPins.release(host);
     }
   };
 }
